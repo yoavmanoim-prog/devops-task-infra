@@ -9,17 +9,7 @@ variable "cidr" {
 }
 
 variable "azs" {
-  description = "Availability zones to spread subnets across"
-  type        = list(string)
-}
-
-variable "private_subnets" {
-  description = "Private subnet CIDRs (one per AZ) - used for EKS nodes/pods"
-  type        = list(string)
-}
-
-variable "public_subnets" {
-  description = "Public subnet CIDRs (one per AZ) - used for ALBs / NAT gateways"
+  description = "Availability zones to spread subnets across - also determines how many private/public subnet CIDRs get carved out of var.cidr (one pair per AZ)"
   type        = list(string)
 }
 

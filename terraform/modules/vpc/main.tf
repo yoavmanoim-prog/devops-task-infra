@@ -6,6 +6,17 @@
 # kubernetes.io/cluster/<name>=shared) in exactly one place, so every
 # environment inherits the same, correct networking contract for both the
 # in-tree AWS Load Balancer subnet auto-discovery and the EKS control plane.
+locals {
+  # Subnet CIDRs are carved out of var.cidr with cidrsubnet() rather than
+  # hand-listed per environment - callers only ever choose one VPC CIDR and
+  # an AZ count; the /20 split (16 possible blocks per /16) is generous
+  # enough for this demo's AZ counts and never overlaps regardless of how
+  # many AZs are passed in, since private and public each get their own
+  # disjoint half of the index space.
+  private_subnets = [for i, az in var.azs : cidrsubnet(var.cidr, 4, i)]
+  public_subnets  = [for i, az in var.azs : cidrsubnet(var.cidr, 4, i + length(var.azs))]
+}
+
 module "vpc" {
   source  = "terraform-aws-modules/vpc/aws"
   version = "6.6.1" # verified latest as of 2026-07-30 - https://github.com/terraform-aws-modules/terraform-aws-vpc/releases
@@ -14,8 +25,8 @@ module "vpc" {
   cidr = var.cidr
 
   azs             = var.azs
-  private_subnets = var.private_subnets
-  public_subnets  = var.public_subnets
+  private_subnets = local.private_subnets
+  public_subnets  = local.public_subnets
 
   enable_nat_gateway = true
   single_nat_gateway = var.single_nat_gateway
