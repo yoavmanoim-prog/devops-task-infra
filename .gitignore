@@ -1,0 +1,10 @@
+**/.terraform/
+**/.terraform.lock.hcl
+*.tfstate
+*.tfstate.*
+*.tfplan
+crash.log
+crash.*.log
+.terragrunt-cache/
+**/.terragrunt-cache/
+.DS_Store
