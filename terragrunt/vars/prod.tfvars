@@ -3,10 +3,8 @@
 # vpc
 name               = "devops-task-prod"
 cidr               = "10.1.0.0/16"
-azs                = ["us-east-1a", "us-east-1b"]
-private_subnets    = ["10.1.0.0/20", "10.1.16.0/20"]
-public_subnets     = ["10.1.128.0/20", "10.1.144.0/20"]
-single_nat_gateway = false # one NAT per AZ - no single point of failure
+azs                = ["us-east-1a", "us-east-1b"] # private/public subnet CIDRs are derived from cidr+azs in the vpc module, not listed here
+single_nat_gateway = false                        # one NAT per AZ - no single point of failure
 
 # shared identically across vpc/eks/alb-controller/external-secrets/monitoring
 cluster_name = "devops-task-prod"

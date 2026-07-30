@@ -5,10 +5,8 @@
 # vpc
 name               = "devops-task-dev"
 cidr               = "10.0.0.0/16"
-azs                = ["us-east-1a", "us-east-1b"]
-private_subnets    = ["10.0.0.0/20", "10.0.16.0/20"]
-public_subnets     = ["10.0.128.0/20", "10.0.144.0/20"]
-single_nat_gateway = true # cheap/non-HA, fine for dev
+azs                = ["us-east-1a", "us-east-1b"] # private/public subnet CIDRs are derived from cidr+azs in the vpc module, not listed here
+single_nat_gateway = true                         # cheap/non-HA, fine for dev
 
 # shared identically across vpc/eks/alb-controller/external-secrets/monitoring
 cluster_name = "devops-task-dev"
