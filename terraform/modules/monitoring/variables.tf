@@ -1,7 +1,3 @@
-variable "cluster_name" {
-  type = string
-}
-
 variable "namespace" {
   type    = string
   default = "monitoring"
@@ -50,9 +46,4 @@ variable "grafana_resources" {
     requests = { cpu = "100m", memory = "128Mi" }
     limits   = { cpu = "200m", memory = "256Mi" }
   }
-}
-
-variable "tags" {
-  type    = map(string)
-  default = {}
 }

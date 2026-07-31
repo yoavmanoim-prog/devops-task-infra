@@ -34,7 +34,6 @@ dependency "eks" {
     cluster_endpoint                   = "https://mock.eks.amazonaws.com"
     cluster_certificate_authority_data = "bW9jaw=="
     oidc_provider_arn                  = "arn:aws:iam::302954730632:oidc-provider/mock"
-    oidc_provider                      = "oidc.eks.us-east-1.amazonaws.com/id/MOCK"
   }
   mock_outputs_allowed_terraform_commands = ["validate", "plan", "init"]
 }
@@ -73,7 +72,7 @@ generate "provider_k8s_helm" {
     }
 
     provider "helm" {
-      kubernetes {
+      kubernetes = {
         host                   = "${dependency.eks.outputs.cluster_endpoint}"
         cluster_ca_certificate = base64decode("${dependency.eks.outputs.cluster_certificate_authority_data}")
         token                  = data.aws_eks_cluster_auth.this.token
@@ -85,5 +84,4 @@ generate "provider_k8s_helm" {
 inputs = {
   vpc_id            = dependency.vpc.outputs.vpc_id
   oidc_provider_arn = dependency.eks.outputs.oidc_provider_arn
-  oidc_provider     = dependency.eks.outputs.oidc_provider
 }

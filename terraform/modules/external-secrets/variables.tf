@@ -7,11 +7,8 @@ variable "region" {
 }
 
 variable "oidc_provider_arn" {
-  type = string
-}
-
-variable "oidc_provider" {
-  type = string
+  description = "EKS cluster's OIDC provider ARN (module.eks.oidc_provider_arn) - required for IRSA trust policy. The issuer URL itself isn't needed as a separate input: the iam-role-for-service-accounts submodule derives it from this ARN."
+  type        = string
 }
 
 variable "namespace" {

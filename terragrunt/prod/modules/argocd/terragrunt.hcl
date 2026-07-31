@@ -24,8 +24,6 @@ dependency "eks" {
     cluster_name                       = "devops-task-mock"
     cluster_endpoint                   = "https://mock.eks.amazonaws.com"
     cluster_certificate_authority_data = "bW9jaw=="
-    oidc_provider_arn                  = "arn:aws:iam::302954730632:oidc-provider/mock"
-    oidc_provider                      = "oidc.eks.us-east-1.amazonaws.com/id/MOCK"
   }
   mock_outputs_allowed_terraform_commands = ["validate", "plan", "init"]
 }
@@ -58,7 +56,7 @@ generate "provider_k8s_helm" {
     }
 
     provider "helm" {
-      kubernetes {
+      kubernetes = {
         host                   = "${dependency.eks.outputs.cluster_endpoint}"
         cluster_ca_certificate = base64decode("${dependency.eks.outputs.cluster_certificate_authority_data}")
         token                  = data.aws_eks_cluster_auth.this.token
@@ -68,7 +66,7 @@ generate "provider_k8s_helm" {
 }
 
 # github_oauth_client_id / github_oauth_client_secret are deliberately NOT
-# set here or in vars/dev.tfvars - export TF_VAR_github_oauth_client_id and
+# set here or in vars/prod.tfvars - export TF_VAR_github_oauth_client_id and
 # TF_VAR_github_oauth_client_secret in the shell before apply instead, so no
 # OAuth credential ever gets committed to this public repo.
 inputs = {

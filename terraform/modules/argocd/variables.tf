@@ -44,8 +44,3 @@ variable "argocd_external_url" {
   type        = string
   default     = ""
 }
-
-variable "tags" {
-  type    = map(string)
-  default = {}
-}
