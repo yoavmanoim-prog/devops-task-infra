@@ -12,25 +12,20 @@ region       = "us-east-1"
 
 # eks
 enable_cluster_encryption = true # envelope-encrypt secrets at rest in prod
+# One node group, not two. The second ("system", tainted NO_SCHEDULE) had
+# nothing tolerating it anywhere in the gitops repo, so it would have run
+# permanently empty at full cost - it was reserved for future workloads that
+# don't exist. min_size is 2 rather than 1 on purpose: the whole prod stack
+# (app + ArgoCD + kube-prometheus-stack + controllers) needs ~2.4 vCPU of
+# requests, so a SPOT reclaim down to a single 2-vCPU node would leave pods
+# Pending. 2 nodes = ~65% CPU / ~48% memory committed, which has headroom.
 eks_managed_node_groups = {
   general = {
-    instance_types = ["m6i.large"]
-    capacity_type  = "ON_DEMAND"
+    instance_types = ["t3.medium"]
+    capacity_type  = "SPOT"
     min_size       = 2
-    desired_size   = 3
-    max_size       = 6
-  }
-  system = {
-    instance_types = ["m6i.large"]
-    capacity_type  = "ON_DEMAND"
-    min_size       = 1
-    desired_size   = 1
-    max_size       = 2
-    taints = [{
-      key    = "dedicated"
-      value  = "system"
-      effect = "NO_SCHEDULE"
-    }]
+    desired_size   = 2
+    max_size       = 4
   }
 }
 
