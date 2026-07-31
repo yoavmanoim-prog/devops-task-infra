@@ -5,10 +5,10 @@
 # IAM identity with EC2/ELBv2 permissions, granted here through IRSA rather
 # than node-level IAM so the permission is scoped to this one workload.
 module "irsa_alb_controller" {
-  source  = "terraform-aws-modules/iam/aws//modules/iam-role-for-service-accounts-eks"
+  source  = "terraform-aws-modules/iam/aws//modules/iam-role-for-service-accounts"
   version = "6.6.1" # verified latest as of 2026-07-30 - https://github.com/terraform-aws-modules/terraform-aws-iam/releases
 
-  role_name = "${var.cluster_name}-alb-controller"
+  name = "${var.cluster_name}-alb-controller"
 
   attach_load_balancer_controller_policy = true
 
@@ -39,7 +39,7 @@ resource "helm_release" "aws_load_balancer_controller" {
         create = true
         name   = "aws-load-balancer-controller"
         annotations = {
-          "eks.amazonaws.com/role-arn" = module.irsa_alb_controller.iam_role_arn
+          "eks.amazonaws.com/role-arn" = module.irsa_alb_controller.arn
         }
       }
 

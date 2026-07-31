@@ -6,16 +6,16 @@
 # the caller) so a compromised dev pod's ExternalSecret can't be pointed at
 # a prod secret ARN and succeed.
 module "irsa_external_secrets" {
-  source  = "terraform-aws-modules/iam/aws//modules/iam-role-for-service-accounts-eks"
+  source  = "terraform-aws-modules/iam/aws//modules/iam-role-for-service-accounts"
   version = "6.6.1" # verified latest as of 2026-07-30 - https://github.com/terraform-aws-modules/terraform-aws-iam/releases
 
-  role_name = "${var.cluster_name}-external-secrets"
+  name = "${var.cluster_name}-external-secrets"
 
   # NOTE ON VERIFICATION: attach_external_secrets_policy + the
   # external_secrets_*_arns inputs are documented on this module's current
   # registry page as of 2026-07-30. Re-check against the pinned version's
   # docs before apply, same as every other module in this repo.
-  attach_external_secrets_policy       = true
+  attach_external_secrets_policy        = true
   external_secrets_secrets_manager_arns = var.secret_arns
   external_secrets_ssm_parameter_arns   = var.secret_arns
 
@@ -43,7 +43,7 @@ resource "helm_release" "external_secrets" {
         create = true
         name   = "external-secrets"
         annotations = {
-          "eks.amazonaws.com/role-arn" = module.irsa_external_secrets.iam_role_arn
+          "eks.amazonaws.com/role-arn" = module.irsa_external_secrets.arn
         }
       }
 

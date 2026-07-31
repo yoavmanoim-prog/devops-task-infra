@@ -2,11 +2,33 @@
 #
 # NOTE ON VERSION VERIFICATION: this module's input schema changes between
 # major versions (v19 -> v20 -> v21 reworked node group and access-entry
-# inputs significantly). The attributes below match the v21 line as
-# documented at https://registry.terraform.io/modules/terraform-aws-modules/eks/aws/21.24.0
-# at the time this was written (2026-07-30). Before `terragrunt apply`,
-# re-run `terraform providers schema` / check the pinned registry page,
-# since these community modules ship breaking changes on minor bumps too.
+# inputs significantly) - confirmed the hard way: `cluster_encryption_config`,
+# `cluster_addons`, and `eks_managed_node_group_defaults` (all used in an
+# earlier draft of this file, based on the v19/v20-era docs) are rejected
+# outright by the actual v21.24.0 schema, verified directly against
+# github.com/terraform-aws-modules/terraform-aws-eks's variables.tf at the
+# refs/tags/v21.24.0 ref. Corrected below to `encryption_config`, `addons`,
+# and a per-node-group `ami_type` default applied via a local (v21 has no
+# separate node-group-defaults variable at all). Before `terragrunt apply`,
+# re-check that same tagged ref's variables.tf, since these community
+# modules ship breaking changes on minor bumps too.
+locals {
+  # v21's eks_managed_node_groups.taints is a map (keyed by an arbitrary
+  # identifier, we use the taint's own key) of the *same* {key,value,effect}
+  # object - not a bare list like the v19/v20 schema. Converted here so the
+  # module's own public variable (var.eks_managed_node_groups, still a list
+  # of taints for caller simplicity) doesn't need to change shape for every
+  # tfvars file that sets one.
+  eks_managed_node_groups = {
+    for name, ng in var.eks_managed_node_groups :
+    name => merge(
+      { ami_type = "AL2023_x86_64_STANDARD" },
+      ng,
+      { taints = { for t in ng.taints : t.key => t } }
+    )
+  }
+}
+
 module "eks" {
   source  = "terraform-aws-modules/eks/aws"
   version = "21.24.0" # verified latest as of 2026-07-30 - https://github.com/terraform-aws-modules/terraform-aws-eks/releases
@@ -44,13 +66,13 @@ module "eks" {
   }
 
   create_kms_key = var.enable_cluster_encryption
-  cluster_encryption_config = var.enable_cluster_encryption ? {
+  encryption_config = var.enable_cluster_encryption ? {
     resources = ["secrets"]
-  } : {}
+  } : null
 
   enable_irsa = true
 
-  cluster_addons = {
+  addons = {
     coredns = {
       most_recent = true
     }
@@ -62,11 +84,7 @@ module "eks" {
     }
   }
 
-  eks_managed_node_group_defaults = {
-    ami_type = "AL2023_x86_64_STANDARD"
-  }
-
-  eks_managed_node_groups = var.eks_managed_node_groups
+  eks_managed_node_groups = local.eks_managed_node_groups
 
   # The AWS Load Balancer Controller's admission webhook runs on nodes and
   # must be reachable from the control plane on 9443, or ALB/Ingress

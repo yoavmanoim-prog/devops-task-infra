@@ -1,5 +1,5 @@
 output "irsa_role_arn" {
-  value = module.irsa_external_secrets.iam_role_arn
+  value = module.irsa_external_secrets.arn
 }
 
 output "cluster_secret_store_name" {
