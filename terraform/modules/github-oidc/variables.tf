@@ -4,8 +4,14 @@ variable "github_org" {
 }
 
 variable "github_repo" {
-  description = "App repo name this role trusts, e.g. \"devops-task-app\". The role is scoped to this one repo, not to a specific branch/ref, because CI runs the same ECR-push step from three long-lived branches (dev/staging/prod) - narrowing further to per-branch roles would add three roles for no real isolation gain, since all three only ever push images, never touch prod infra directly."
+  description = "App repo name this role trusts, e.g. \"devops-task-app\". Scoped to this one repo and only the branches in var.github_branches, not the whole repo (any ref/event) - narrowing further to per-branch roles would add three roles for no real isolation gain, since all three only ever push images, never touch prod infra directly."
   type        = string
+}
+
+variable "github_branches" {
+  description = "Long-lived branches in github_repo allowed to assume this role - a security-review pass caught that the trust policy previously used a bare `repo:org/repo:*` wildcard, which also matches pull_request events, tags, and arbitrary branches, not just these three. Update this if the app repo's branch names ever change (e.g. it already changed once: prod -> main)."
+  type        = list(string)
+  default     = ["dev", "staging", "main"]
 }
 
 variable "role_name" {
