@@ -66,7 +66,7 @@ generate "provider_k8s_helm" {
 }
 
 # github_oauth_client_id / github_oauth_client_secret are deliberately NOT
-# set here or in vars/dev.tfvars - export TF_VAR_github_oauth_client_id and
+# set here or in vars/prod.tfvars - export TF_VAR_github_oauth_client_id and
 # TF_VAR_github_oauth_client_secret in the shell before apply instead, so no
 # OAuth credential ever gets committed to this public repo.
 inputs = {
