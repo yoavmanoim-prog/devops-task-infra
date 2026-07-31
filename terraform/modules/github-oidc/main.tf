@@ -4,18 +4,44 @@
 # still satisfies the schema without hardcoding a fingerprint that would
 # silently go stale on GitHub's next cert rotation.
 data "tls_certificate" "github_actions" {
+  count = var.create_oidc_provider ? 1 : 0
+
   url = "https://token.actions.githubusercontent.com/.well-known/openid-configuration"
 }
 
-# One IAM OIDC identity provider for GitHub Actions per AWS account (not per
-# repo/role - re-creating it per caller would collide, since the provider's
-# URL is globally unique within an account).
+# The GitHub OIDC identity provider is ACCOUNT-GLOBAL - exactly one can exist
+# per URL per AWS account - so this module must not assume it owns one.
+# Creating it unconditionally fails with EntityAlreadyExists in any account
+# where something else got there first, which is what happened here: an
+# earlier project in this account created it on 2026-05-31 and one of its
+# roles still trusts it.
+#
+# Importing it into this project's state would have "worked", but would then
+# let `terragrunt destroy` delete a provider another project depends on. So
+# instead: create it when this project is genuinely the first one in the
+# account (the default, keeping the module self-contained), or adopt the
+# existing one read-only and leave ownership where it already is.
+#
+# This is a workaround for sharing one AWS account across projects, not a
+# substitute for real isolation - see infra/README.md "Known limitations".
 resource "aws_iam_openid_connect_provider" "github_actions" {
+  count = var.create_oidc_provider ? 1 : 0
+
   url             = "https://token.actions.githubusercontent.com"
   client_id_list  = ["sts.amazonaws.com"]
-  thumbprint_list = [data.tls_certificate.github_actions.certificates[0].sha1_fingerprint]
+  thumbprint_list = [data.tls_certificate.github_actions[0].certificates[0].sha1_fingerprint]
 
   tags = var.tags
+}
+
+data "aws_iam_openid_connect_provider" "github_actions" {
+  count = var.create_oidc_provider ? 0 : 1
+
+  url = "https://token.actions.githubusercontent.com"
+}
+
+locals {
+  oidc_provider_arn = var.create_oidc_provider ? aws_iam_openid_connect_provider.github_actions[0].arn : data.aws_iam_openid_connect_provider.github_actions[0].arn
 }
 
 # Trust policy scopes AssumeRoleWithWebIdentity to tokens whose `sub` claim
@@ -32,7 +58,7 @@ data "aws_iam_policy_document" "assume_role" {
 
     principals {
       type        = "Federated"
-      identifiers = [aws_iam_openid_connect_provider.github_actions.arn]
+      identifiers = [local.oidc_provider_arn]
     }
 
     condition {

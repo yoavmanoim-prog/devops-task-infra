@@ -14,6 +14,12 @@ variable "github_branches" {
   default     = ["dev", "staging", "main"]
 }
 
+variable "create_oidc_provider" {
+  description = "Whether to CREATE the account-global GitHub OIDC provider, or adopt an existing one read-only. Default true keeps this module self-contained in a fresh account. Set false when another project in the same AWS account already created it - creating it twice fails with EntityAlreadyExists, and importing it here would let `destroy` delete a provider that project still depends on. See infra/README.md \"Known limitations\" - this is a shared-account workaround, not real isolation."
+  type        = bool
+  default     = true
+}
+
 variable "role_name" {
   type    = string
   default = "github-actions-ecr-push"

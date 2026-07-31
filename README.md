@@ -133,6 +133,31 @@ can authenticate to AWS but can't push the resulting image tag into `gitops`.
 
 ## Known limitations
 
+- **This project shares an AWS account with an unrelated project, and the GitHub OIDC provider is
+  worked around rather than isolated.** The IAM OIDC identity provider for GitHub Actions is
+  *account-global* - exactly one can exist per URL per AWS account. Account `302954730632` already
+  had one, created 2026-05-31 by an earlier `pdm-*` project whose `pdm-github-actions` role still
+  trusts it, so the first `terragrunt apply` of `shared/modules/github-oidc` failed outright with
+  `EntityAlreadyExists`.
+
+  The fix applied is a `create_oidc_provider` flag on the module: `true` (the default) creates the
+  provider so the module still stands alone in a fresh account; `false` - set in
+  `terragrunt/vars/shared.tfvars` for this account - adopts the existing one through a read-only
+  data source. Importing it instead would have been fewer lines, but would have handed ownership to
+  this project's state, so `terragrunt destroy` after the review would have deleted a provider the
+  other project depends on.
+
+  **This is a patch, not real isolation.** It solves exactly one collision. Any other account-global
+  or fixed-name resource this project might add later (an IAM role or policy name, a Route53 zone, a
+  service-linked role) can collide the same way, and the flag doesn't generalise to those. The
+  actual fix is **one AWS account per project**, ideally under AWS Organizations so accounts are
+  cheap to create and centrally billed - then nothing is shared, `destroy` has a blast radius of
+  exactly one project, and no flag is needed. That wasn't done here because there's no existing
+  Organization to create a sub-account under, and a brand-new standalone account starts with low
+  default EC2/Spot vCPU quotas that would have needed an increase request (hours-to-days turnaround)
+  before this stack could launch at all - not viable against the deadline. Given more runway,
+  separate accounts is the right answer and this flag should be deleted.
+
 - **NetworkPolicy enforcement is not verified.** The `gitops` repo's default-deny NetworkPolicies
   are what's meant to keep `dev` and `staging` apart on their shared cluster, but nothing in this
   project explicitly enables the VPC CNI's network policy feature - as written, the policies are
