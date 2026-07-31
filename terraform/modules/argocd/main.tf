@@ -9,10 +9,22 @@
 #    folder in the gitops repo, which in turn defines this env's AppProject
 #    and the actual workload Application
 
+# The namespace is created explicitly rather than leaving it to the Helm
+# release's create_namespace, because the Dex OAuth secret below has to exist
+# in this namespace BEFORE the chart installs - and helm_release depends_on
+# that secret. Letting Helm own the namespace makes those two requirements
+# circular, and the apply fails with `namespaces "argocd" not found`. Same
+# pattern the monitoring module already uses.
+resource "kubernetes_namespace" "argocd" {
+  metadata {
+    name = var.namespace
+  }
+}
+
 resource "kubernetes_secret" "argocd_github_oauth" {
   metadata {
     name      = "argocd-github-oauth"
-    namespace = var.namespace
+    namespace = kubernetes_namespace.argocd.metadata[0].name
     labels = {
       "app.kubernetes.io/part-of" = "argocd"
     }
@@ -31,8 +43,8 @@ resource "helm_release" "argocd" {
   repository       = "https://argoproj.github.io/argo-helm"
   chart            = "argo-cd"
   version          = var.chart_version
-  namespace        = var.namespace
-  create_namespace = true
+  namespace        = kubernetes_namespace.argocd.metadata[0].name
+  create_namespace = false # owned by kubernetes_namespace.argocd above
 
   values = [
     yamlencode({
