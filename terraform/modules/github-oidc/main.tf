@@ -19,9 +19,12 @@ resource "aws_iam_openid_connect_provider" "github_actions" {
 }
 
 # Trust policy scopes AssumeRoleWithWebIdentity to tokens whose `sub` claim
-# names this exact org/repo - any other GitHub repo's workflow, even one
-# using the same OIDC provider, is rejected at the STS layer before IAM
-# policy evaluation even runs.
+# names this exact org/repo AND one of var.github_branches - any other
+# GitHub repo's workflow is rejected at the STS layer before IAM policy
+# evaluation even runs, and so is anything in this repo that isn't a push
+# to one of those branches (a pull_request run, a tag push, an arbitrary
+# feature branch) - a bare `repo:org/repo:*` wildcard would satisfy all of
+# those too, which a security-review pass flagged as broader than intended.
 data "aws_iam_policy_document" "assume_role" {
   statement {
     effect  = "Allow"
@@ -41,7 +44,10 @@ data "aws_iam_policy_document" "assume_role" {
     condition {
       test     = "StringLike"
       variable = "token.actions.githubusercontent.com:sub"
-      values   = ["repo:${var.github_org}/${var.github_repo}:*"]
+      values = [
+        for branch in var.github_branches :
+        "repo:${var.github_org}/${var.github_repo}:ref:refs/heads/${branch}"
+      ]
     }
   }
 }
