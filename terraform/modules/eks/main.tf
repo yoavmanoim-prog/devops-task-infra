@@ -72,33 +72,41 @@ module "eks" {
 
   enable_irsa = true
 
+  # before_compute matters here and defaults to FALSE, which is wrong for the
+  # networking addons: a node can't reach Ready without the VPC CNI (no pod
+  # IPs) or kube-proxy, so with the default ordering Terraform builds the node
+  # group first, every node fails its health check, and the whole node group
+  # times out as CREATE_FAILED - which is exactly what happened on the first
+  # attempt (cluster ACTIVE, `aws eks list-addons` empty, nodes never joined).
+  #
+  # coredns is deliberately left at before_compute = false: it's an ordinary
+  # Deployment that needs schedulable nodes to run on, so installing it before
+  # compute exists just leaves it Pending.
   addons = {
-    coredns = {
-      most_recent = true
+    vpc-cni = {
+      most_recent    = true
+      before_compute = true
     }
     kube-proxy = {
-      most_recent = true
+      most_recent    = true
+      before_compute = true
     }
-    vpc-cni = {
+    coredns = {
       most_recent = true
     }
   }
 
   eks_managed_node_groups = local.eks_managed_node_groups
 
-  # The AWS Load Balancer Controller's admission webhook runs on nodes and
-  # must be reachable from the control plane on 9443, or ALB/Ingress
-  # reconciliation silently fails with webhook timeout errors.
-  node_security_group_additional_rules = {
-    ingress_alb_controller_webhook = {
-      description                   = "Cluster API to node webhooks (aws-load-balancer-controller, etc.)"
-      protocol                      = "tcp"
-      from_port                     = 9443
-      to_port                       = 9443
-      type                          = "ingress"
-      source_cluster_security_group = true
-    }
-  }
+  # NOTE: no node_security_group_additional_rules here. An earlier version of
+  # this module added an explicit control-plane -> node TCP/9443 ingress rule
+  # for the AWS Load Balancer Controller's admission webhook. That is already
+  # covered by v21's node_security_group_enable_recommended_rules (default
+  # true), which creates ingress_cluster_{443,4443,6443,8443,9443}_webhook
+  # plus kubelet and coredns rules. Declaring 9443 again failed the apply
+  # outright with InvalidPermission.Duplicate, since both rules resolve to the
+  # same (protocol, port, source SG) tuple. Re-check the module's recommended
+  # set before adding any rule here - it is broader than it looks.
 
   tags = var.tags
 }
