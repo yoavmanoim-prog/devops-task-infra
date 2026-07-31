@@ -32,19 +32,6 @@ generate "provider_k8s_helm" {
   path      = "provider_k8s_helm.tf"
   if_exists = "overwrite_terragrunt"
   contents  = <<-EOF
-    terraform {
-      required_providers {
-        aws = {
-          source  = "hashicorp/aws"
-          version = "~> 6.0"
-        }
-        kubernetes = {
-          source  = "hashicorp/kubernetes"
-          version = "~> 2.35"
-        }
-      }
-    }
-
     data "aws_eks_cluster_auth" "this" {
       name = "${dependency.eks.outputs.cluster_name}"
     }
