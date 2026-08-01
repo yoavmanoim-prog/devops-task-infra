@@ -131,6 +131,43 @@ can authenticate to AWS but can't push the resulting image tag into `gitops`.
   registered on the one App) rather than one per cluster.
 - **Feature-branch-per-step git workflow** - every module/component landed as its own PR.
 
+## Monitoring storage: what's here, and what production should do
+
+The `monitoring` module gives Prometheus and Grafana EBS-backed PVCs via the
+`aws-ebs-csi-driver` addon. That addon is **not optional** on modern EKS: the cluster
+ships a `gp2` StorageClass whose provisioner is the in-tree `kubernetes.io/aws-ebs`
+driver, which Kubernetes **removed in 1.31**. On 1.34 it can never bind a volume, so
+without the CSI driver every PVC sits `Pending` and the Helm release times out.
+
+**Known weakness of this setup — EBS volumes are AZ-scoped.** Node groups here are SPOT
+across two AZs. If the node holding a Prometheus volume is reclaimed, the pod can only
+reschedule onto a node in that *same* AZ; if there isn't one, it stays `Pending` until
+capacity returns. `volumeBindingMode: WaitForFirstConsumer` fixes initial placement only,
+not rescheduling. Acceptable for a demo, not for production.
+
+Three ways to actually solve it, in rough order of preference:
+
+1. **Prometheus → Thanos → S3 (recommended).** Prometheus keeps a short local window
+   (~2h blocks); a Thanos sidecar ships completed blocks to S3, and a Store Gateway
+   serves historical queries from there. Durable metrics with no AZ pinning on the
+   copy that matters, at roughly a third of EBS's per-GB cost. `kube-prometheus-stack`
+   supports this natively via `prometheusSpec.thanos`. Cost is the extra components
+   (sidecar, store, query, compact) - not free on a small cluster, which is why it's
+   documented rather than deployed here. Amazon Managed Prometheus is the same idea
+   with the operational burden outsourced.
+2. **Grafana → RDS.** Grafana's PVC only holds a SQLite database of dashboards, users,
+   and datasource definitions. Pointing `grafana.ini`'s `[database]` at a managed
+   Postgres removes that PVC entirely, makes Grafana genuinely stateless and
+   horizontally scalable, and takes its AZ-pinning problem off the table. This is the
+   cheaper and simpler half of the fix and is worth doing before Thanos.
+3. **One node group per AZ.** Keeps EBS but guarantees a pod can always reschedule
+   within its volume's AZ. Costs more nodes; doesn't help if a whole AZ is degraded.
+
+**EFS is deliberately not used.** It would solve the AZ problem, but Prometheus's own
+docs state that NFS filesystems - naming AWS EFS explicitly - are unsupported for local
+storage and may cause unrecoverable corruption, because the TSDB relies on POSIX
+semantics and mmap. It is also ~4x the per-GB cost of EBS.
+
 ## Known limitations
 
 - **This project shares an AWS account with an unrelated project, and the GitHub OIDC provider is
