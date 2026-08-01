@@ -29,6 +29,29 @@ locals {
   }
 }
 
+# IRSA role for the EBS CSI driver addon above. Same pattern as the
+# alb-controller / external-secrets modules: a workload-scoped IAM identity
+# rather than granting EC2 volume permissions to the whole node role.
+#
+# Depends on the cluster's OIDC provider, which module.eks creates - Terraform
+# resolves that ordering from the module.eks.oidc_provider_arn reference.
+module "irsa_ebs_csi" {
+  source  = "terraform-aws-modules/iam/aws//modules/iam-role-for-service-accounts"
+  version = "6.6.1"
+
+  name                  = "${var.cluster_name}-ebs-csi"
+  attach_ebs_csi_policy = true
+
+  oidc_providers = {
+    main = {
+      provider_arn               = module.eks.oidc_provider_arn
+      namespace_service_accounts = ["kube-system:ebs-csi-controller-sa"]
+    }
+  }
+
+  tags = var.tags
+}
+
 module "eks" {
   source  = "terraform-aws-modules/eks/aws"
   version = "21.24.0" # verified latest as of 2026-07-30 - https://github.com/terraform-aws-modules/terraform-aws-eks/releases
@@ -93,6 +116,21 @@ module "eks" {
     }
     coredns = {
       most_recent = true
+    }
+    # Not optional on modern EKS. The cluster's built-in `gp2` StorageClass
+    # uses the in-tree kubernetes.io/aws-ebs provisioner, which Kubernetes
+    # REMOVED in 1.31 - on 1.34 it can never bind a volume, so every PVC sits
+    # Pending ("no persistent volumes available for this claim") and any chart
+    # waiting on one times out. Needs its own IRSA role because the driver
+    # calls the EC2 API to create and attach volumes.
+    #
+    # Caveat documented in infra/README.md: EBS volumes are AZ-scoped, so a
+    # SPOT reclaim can strand a pod whose volume lives in an AZ that no longer
+    # has a node. Thanos->S3 (metrics) and RDS (Grafana's DB) are the real
+    # fixes; both are described there.
+    aws-ebs-csi-driver = {
+      most_recent              = true
+      service_account_role_arn = module.irsa_ebs_csi.arn
     }
   }
 
