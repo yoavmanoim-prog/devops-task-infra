@@ -14,6 +14,18 @@ variable "github_branches" {
   default     = ["dev", "staging", "main"]
 }
 
+variable "github_owner_id" {
+  description = "Numeric GitHub account ID of github_org. Only needed when the account has OIDC \"immutable numeric IDs\" enabled, which makes the token's sub claim read repo:ORG@<owner_id>/REPO@<repo_id>:... instead of repo:ORG/REPO:.... Leave empty to trust only the plain-name form. Find it with: gh api /users/<org> --jq .id"
+  type        = string
+  default     = ""
+}
+
+variable "github_repo_id" {
+  description = "Numeric GitHub repository ID of github_repo - see github_owner_id. Both must be set for the ID-form subject to be trusted. Find it with: gh api /repos/<org>/<repo> --jq .id"
+  type        = string
+  default     = ""
+}
+
 variable "create_oidc_provider" {
   description = "Whether to CREATE the account-global GitHub OIDC provider, or adopt an existing one read-only. Default true keeps this module self-contained in a fresh account. Set false when another project in the same AWS account already created it - creating it twice fails with EntityAlreadyExists, and importing it here would let `destroy` delete a provider that project still depends on. See infra/README.md \"Known limitations\" - this is a shared-account workaround, not real isolation."
   type        = bool

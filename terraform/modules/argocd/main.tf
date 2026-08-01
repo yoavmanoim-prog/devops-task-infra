@@ -74,6 +74,20 @@ resource "helm_release" "argocd" {
         rbac = {
           "policy.default" = "role:readonly"
           "policy.csv"     = "g, ${var.admin_github_username}, role:admin"
+
+          # `scopes` controls which JWT claims ArgoCD matches policy.csv
+          # subjects against. The chart's default is [groups] ONLY, which
+          # silently breaks this policy: with the Dex GitHub connector,
+          # `groups` is populated from GitHub org/team membership, and
+          # admin_github_username is a personal account with no orgs - so it
+          # matched nothing and the admin fell through to policy.default
+          # (role:readonly), able to view everything but not sync anything.
+          #
+          # preferred_username is what Dex sets to the GitHub login, so adding
+          # it makes the `g, <username>, role:admin` line above actually
+          # resolve. groups is kept first so org/team-based rules still work
+          # if this is ever pointed at a real organisation.
+          "scopes" = "[groups, preferred_username]"
         }
       }
 

@@ -42,6 +42,14 @@ grafana_storage_size    = "5Gi"
 gitops_repo_url       = "https://github.com/yoavmanoim-prog/devops-task-gitops.git"
 admin_github_username = "yoavmanoim-prog"
 
+# Set AFTER the first apply, once the argocd-server NLB exists - this is the
+# chicken-and-egg the README describes. While it's empty, configs.cm.url is
+# empty too and Dex cannot build a valid OAuth redirect URI, so GitHub SSO
+# fails at the callback. The GitHub OAuth App's Authorization callback URL
+# must match this exactly, with the /api/dex/callback suffix:
+#   https://k8s-argocd-argocdse-366d9a4070-38649c01922dac28.elb.us-east-1.amazonaws.com/api/dex/callback
+argocd_external_url = "k8s-argocd-argocdse-366d9a4070-38649c01922dac28.elb.us-east-1.amazonaws.com"
+
 tags = {
   Environment = "dev"
   Project     = "devops-task"
