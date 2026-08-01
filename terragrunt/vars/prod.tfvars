@@ -15,16 +15,35 @@ enable_cluster_encryption = true # envelope-encrypt secrets at rest in prod
 # One node group, not two. The second ("system", tainted NO_SCHEDULE) had
 # nothing tolerating it anywhere in the gitops repo, so it would have run
 # permanently empty at full cost - it was reserved for future workloads that
-# don't exist. min_size is 2 rather than 1 on purpose: the whole prod stack
-# (app + ArgoCD + kube-prometheus-stack + controllers) needs ~2.4 vCPU of
-# requests, so a SPOT reclaim down to a single 2-vCPU node would leave pods
-# Pending. 2 nodes = ~65% CPU / ~48% memory committed, which has headroom.
+# don't exist.
+#
+# THREE nodes, not two, and the binding constraint is pod COUNT, not CPU.
+# A t3.medium allows only 17 pods under the VPC CNI's default per-ENI IP
+# allocation, while CPU allocatable is 1930m/node and the whole stack only
+# requests ~2.4 vCPU. At 2 nodes prod filled one node to 17/17, which left a
+# node-exporter DaemonSet pod permanently Pending (it can only run on the
+# full node, since the other already has one) and left just 6 free slots for
+# app-production, whose HPA can scale to 8.
+#
+# The zero-cost alternative is VPC CNI prefix delegation
+# (ENABLE_PREFIX_DELEGATION, 17 -> 110 pods/node), but it only takes effect
+# on newly-allocated ENIs, so it needs both node groups cycled - restarting
+# every running pod. A third SPOT node is ~$0.30/day and needs no disruption.
+# See infra/README.md for the trade-off.
+#
+# Only desired_size changes: that is what actually sets the node count. There
+# is no cluster-autoscaler here, so nothing ever scales this group and
+# min_size/max_size are just bounds that never bind. (Raising min_size to 3
+# alongside desired was also rejected outright by EKS - it validates
+# min <= desired against CURRENT state, so min=3 failed while desired was
+# still 2. If a SPOT node is reclaimed the ASG replaces it to return to
+# desired_size regardless of min_size.)
 eks_managed_node_groups = {
   general = {
     instance_types = ["t3.medium"]
     capacity_type  = "SPOT"
     min_size       = 2
-    desired_size   = 2
+    desired_size   = 3
     max_size       = 4
   }
 }
