@@ -42,6 +42,30 @@ data "aws_iam_openid_connect_provider" "github_actions" {
 
 locals {
   oidc_provider_arn = var.create_oidc_provider ? aws_iam_openid_connect_provider.github_actions[0].arn : data.aws_iam_openid_connect_provider.github_actions[0].arn
+
+  # GitHub can issue the `sub` claim in two shapes, and which one you get is an
+  # account-level setting ("immutable numeric IDs"):
+  #
+  #   plain : repo:ORG/REPO:ref:refs/heads/dev
+  #   ids   : repo:ORG@<owner_id>/REPO@<repo_id>:ref:refs/heads/dev
+  #
+  # This account has the ID form enabled, which is why the first real CI run
+  # failed with "Not authorized to perform sts:AssumeRoleWithWebIdentity"
+  # despite a trust policy that looked correct - it only listed the plain form.
+  #
+  # Both forms are listed EXACTLY, deliberately without wildcards. Something
+  # like `repo:ORG*/REPO*` would also match an org an attacker can register
+  # (ORG-evil), which is a real privilege-escalation path in OIDC trust
+  # policies. The ID form is the stronger of the two: it pins to this exact
+  # account and repository, so a repo that is renamed or deleted and recreated
+  # under the same name gets a new ID and is denied.
+  subject_claims = flatten([
+    for branch in var.github_branches : compact([
+      "repo:${var.github_org}/${var.github_repo}:ref:refs/heads/${branch}",
+      var.github_owner_id != "" && var.github_repo_id != "" ?
+      "repo:${var.github_org}@${var.github_owner_id}/${var.github_repo}@${var.github_repo_id}:ref:refs/heads/${branch}" : "",
+    ])
+  ])
 }
 
 # Trust policy scopes AssumeRoleWithWebIdentity to tokens whose `sub` claim
@@ -67,13 +91,13 @@ data "aws_iam_policy_document" "assume_role" {
       values   = ["sts.amazonaws.com"]
     }
 
+    # StringEquals, not StringLike: every entry in local.subject_claims is a
+    # complete literal, so there is nothing to pattern-match and no way for a
+    # stray wildcard to widen this later.
     condition {
-      test     = "StringLike"
+      test     = "StringEquals"
       variable = "token.actions.githubusercontent.com:sub"
-      values = [
-        for branch in var.github_branches :
-        "repo:${var.github_org}/${var.github_repo}:ref:refs/heads/${branch}"
-      ]
+      values   = local.subject_claims
     }
   }
 }
