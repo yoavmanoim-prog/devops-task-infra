@@ -132,6 +132,13 @@ data "aws_iam_policy_document" "ecr_push" {
       "ecr:InitiateLayerUpload",
       "ecr:UploadLayerPart",
       "ecr:CompleteLayerUpload",
+      # Required by the staging/prod promotion workflows, which call
+      # `aws ecr describe-images` to prove the tag being promoted actually
+      # exists before writing it into the gitops repo. Omitting it failed the
+      # first real dev->staging promotion with AccessDeniedException. Unlike
+      # GetAuthorizationToken this IS resource-scoped, so it stays pinned to
+      # the repository ARNs rather than "*".
+      "ecr:DescribeImages",
     ]
     resources = var.ecr_repository_arns
   }
