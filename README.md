@@ -108,6 +108,17 @@ export TF_VAR_github_oauth_client_secret="..."
 
 These are intentionally never written to any `.tfvars` file - this is a public repo.
 
+Same reasoning applies to the alert destination, if you want alerts delivered somewhere. `prod`
+sets `enable_alert_delivery = true`, which creates an SNS topic and gives Alertmanager an IRSA role
+scoped to `sns:Publish` on it - but the topic has no subscriber unless you pass one:
+
+```sh
+TF_VAR_alert_email="you@example.com" terragrunt apply   # from terragrunt/prod/modules/monitoring
+```
+
+AWS emails a confirmation link that **must be clicked** - until then publishes succeed and are
+delivered nowhere, which is precisely the silent failure the alerting work was meant to remove.
+
 ### 4. After apply: wire up the `app` repo's CI
 
 ```sh
@@ -168,6 +179,57 @@ docs state that NFS filesystems - naming AWS EFS explicitly - are unsupported fo
 storage and may cause unrecoverable corruption, because the TSDB relies on POSIX
 semantics and mmap. It is also ~4x the per-GB cost of EBS.
 
+## Controls that were verified (and four that turned out to do nothing)
+
+Every control in this project was tested against the running clusters rather than assumed to work
+from its config. That pass found **four controls that were configured, reported healthy, and had no
+effect whatsoever.** All four are fixed; they are documented here because the failure mode is the
+interesting part.
+
+They share one shape: **a declaration with no implementation.** Kubernetes and Helm validate the
+*shape* of an object, not that anything exists to act on it - so config for a capability whose
+supporting component is missing, disabled, or reading a different key is accepted in silence. No
+error, no event, and `kubectl get` lists the object looking perfectly correct.
+
+| control | what was wrong | how it was caught |
+|---|---|---|
+| **NetworkPolicy** | The CNI enforces these, not Kubernetes, and the VPC CNI ships with enforcement **off**. `dev` and `staging` had default-deny policies and full connectivity. | pod-to-pod request from `staging` to a `dev` pod: **HTTP 200** |
+| **HPA** | Nothing collects pod CPU by default, so it had no input and had never scaled in 22 hours. | `kubectl get hpa` → `cpu: <unknown>/65%` |
+| **Alertmanager** | The chart's default routes every alert to a receiver named `null`. ~100 bundled rules fired into it for the life of the cluster. | reading the rendered Alertmanager config |
+| **ServiceMonitor** | Discovered and scraping, but every scrape was **blocked by the NetworkPolicy fixed above** - Prometheus sits in another namespace on a private subnet, matching neither rule. | Prometheus targets API: `down`, `context deadline exceeded` |
+
+The last one is the sharpest: two fixes made in the same session were in direct conflict, and every
+check that *looks* like verification passed - object present, ArgoCD `Synced/Healthy`, `/metrics`
+returning 200 from inside the pod, 3/3 pods Running. Only Prometheus' own targets API showed the
+truth. (`context deadline exceeded` is the tell: a **timeout** means blocked, a refusal means
+nothing is listening.)
+
+A fifth was caught before it shipped: the Alertmanager IRSA annotation was first placed under
+`alertmanager.alertmanagerSpec.serviceAccount`, which Helm accepts and silently ignores. The
+ServiceAccount came back carrying only Helm's own annotations, so the pod would have had no AWS
+credentials and every alert publish would have failed on auth.
+
+**The commands that prove each one**, since "it's configured" is not evidence:
+
+```sh
+# NetworkPolicy - attempt the connection that should be denied
+kubectl exec -n staging <pod> -- python3 -c "import urllib.request; urllib.request.urlopen('http://<dev-pod-ip>:8000/healthz', timeout=8)"
+
+# HPA - <unknown> means no metrics source
+kubectl get hpa -n production
+kubectl top pods -n production
+
+# alert delivery - fire a synthetic alert, watch the counter move
+kubectl exec -n monitoring alertmanager-... -- wget -qO- http://localhost:9093/metrics | grep 'notifications_total{integration="sns"'
+
+# ServiceMonitor - the ONLY check that means anything
+kubectl exec -n production <pod> -- python3 -c "import json,urllib.request; print([t['health'] for t in json.load(urllib.request.urlopen('http://kube-prometheus-stack-prometheus.monitoring.svc:9090/api/v1/targets?state=active'))['data']['activeTargets'] if t['labels'].get('namespace')=='production'])"
+```
+
+The general rule this project ended up following: **for every control you claim, know the one
+command that proves it, and run it.** The dangerous controls are not the ones that break - they are
+the ones that look fine.
+
 ## Known limitations
 
 - **This project shares an AWS account with an unrelated project, and the GitHub OIDC provider is
@@ -195,10 +257,22 @@ semantics and mmap. It is also ~4x the per-GB cost of EBS.
   before this stack could launch at all - not viable against the deadline. Given more runway,
   separate accounts is the right answer and this flag should be deleted.
 
-- **NetworkPolicy enforcement is not verified.** The `gitops` repo's default-deny NetworkPolicies
-  are what's meant to keep `dev` and `staging` apart on their shared cluster, but nothing in this
-  project explicitly enables the VPC CNI's network policy feature - as written, the policies are
-  accepted by the API but their real-world enforcement is unconfirmed.
+- **NetworkPolicy is enforced now, but only for ingress.** Enforcement is on - see *Controls that
+  were verified* above. What is still missing is **egress**: every policy sets
+  `policyTypes: [Ingress]` only, so a compromised pod can still reach the internet through the NAT
+  gateways, the instance metadata endpoint, or any other namespace. That is arguably the likelier
+  attack direction, since the app mounts a real secret and exfiltration matters more than lateral
+  movement. Unimplemented because egress is the highest-breakage control in Kubernetes:
+  default-deny means enumerating DNS on both UDP and TCP 53, the API server, ECR and every AWS
+  endpoint in use, and one omission fails in ways that look like everything else breaking. Ingress
+  that provably works was preferred over egress that could not be validated in the time available.
+- **Nothing consumes the `Watchdog` alert, so there is no dead man's switch.** Alert delivery works,
+  but `Watchdog` - the always-firing heartbeat whose entire purpose is to prove the alert path is
+  alive - goes to the `null` receiver, which is the chart default. So silence is still ambiguous:
+  if Prometheus or Alertmanager died, no alerts would arrive and that would look exactly like
+  everything being healthy. The fix is to route it to a heartbeat endpoint *outside* the cluster -
+  Dead Man's Snitch, healthchecks.io, or a CloudWatch alarm on the SNS topic's publish count
+  falling to zero - so the *absence* of the heartbeat is what pages someone.
 - **TLS is documented, not provisioned.** The Helm chart's ingress annotations include a
   commented-out ACM/HTTPS block; no certificate or DNS is actually set up for this demo.
 - **Resource quota sizing** (`gitops/platform/*/resourcequota-*.yaml`) is round numbers picked for
