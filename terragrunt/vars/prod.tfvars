@@ -12,6 +12,39 @@ region       = "us-east-1"
 
 # eks
 enable_cluster_encryption = true # envelope-encrypt secrets at rest in prod
+
+# Enabled here even though production is the only APP namespace on this
+# cluster - the isolation argument is not the reason. The cluster also runs
+# argocd, external-secrets, monitoring and kube-system, which are the highest
+# privilege workloads in the system: ArgoCD can deploy anywhere and is
+# internet-exposed via its NLB, external-secrets holds an IRSA role that reads
+# Secrets Manager, Grafana is a web app with a login page. Default-deny stops
+# a compromise in any of those from reaching into the app's pods. That is
+# lateral-movement prevention, not namespace separation.
+#
+# The other half is parity: with dev enforcing and prod not, dev stops
+# predicting prod, and platform/prod/networkpolicy-production.yaml would go on
+# claiming a default-deny that nothing applies - the same lie we just fixed
+# for dev, in the environment where it matters more.
+#
+# Known gap: these policies are Ingress-only. The likelier direction is a
+# compromised app pod reaching OUT - to ArgoCD, to IMDS, or through the NAT
+# gateways - and there is no egress policy anywhere in this repo.
+enable_network_policy = true
+
+# production is the ONLY environment with an HPA (autoscaling.enabled is set
+# in apps/prod/values-production.yaml and nowhere else), so this goes here and
+# not in dev.tfvars - on a cluster with no HPA it would just be an unused
+# component.
+#
+# It was missing, and the failure was silent. The HPA existed, ArgoCD reported
+# Synced and Healthy, minReplicas 3 / maxReplicas 8 read as configured, and
+# `kubectl get hpa` showed `cpu: <unknown>/65%` for 22 hours. Nothing collects
+# pod CPU by default, so the HPA had no input and could never scale - the
+# README's "3 to 8" described an intention, not a behaviour. Same class of bug
+# as the NetworkPolicy that was accepted and enforced by nothing: a
+# declaration with no implementation.
+enable_metrics_server = true
 # One node group, not two. The second ("system", tainted NO_SCHEDULE) had
 # nothing tolerating it anywhere in the gitops repo, so it would have run
 # permanently empty at full cost - it was reserved for future workloads that
