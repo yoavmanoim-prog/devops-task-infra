@@ -38,6 +38,16 @@ enable_cluster_encryption = true # envelope-encrypt secrets at rest in prod
 # min <= desired against CURRENT state, so min=3 failed while desired was
 # still 2. If a SPOT node is reclaimed the ASG replaces it to return to
 # desired_size regardless of min_size.)
+#
+# HOWEVER - changing desired_size here does NOT resize a node group that
+# already exists. The upstream eks module hardcodes
+# `ignore_changes = [scaling_config[0].desired_size]` on the node group, so a
+# node group can only be *created* at this size; afterwards Terraform plans no
+# change and reports nothing, which reads exactly like success. The live third
+# node was added out of band with:
+#   aws eks update-nodegroup-config --cluster-name devops-task-prod \
+#     --nodegroup-name <name> --scaling-config desiredSize=3
+# The value is kept here so a from-scratch apply reproduces what is running.
 eks_managed_node_groups = {
   general = {
     instance_types = ["t3.medium"]
@@ -61,6 +71,14 @@ grafana_storage_size    = "10Gi"
 # argocd (github_oauth_client_id/secret via TF_VAR_ env vars, not here)
 gitops_repo_url       = "https://github.com/yoavmanoim-prog/devops-task-gitops.git"
 admin_github_username = "yoavmanoim-prog"
+
+# Set after the first apply, once the argocd-server NLB existed. Prod needs a
+# SEPARATE GitHub OAuth App from dev: an OAuth App accepts exactly one
+# Authorization callback URL, and each cluster's ArgoCD has its own NLB
+# hostname. (GitHub Apps allow multiple callbacks; OAuth Apps do not.)
+# This one's callback must be exactly:
+#   https://k8s-argocd-argocdse-07cd573bd0-79d1e88b23d31f78.elb.us-east-1.amazonaws.com/api/dex/callback
+argocd_external_url = "k8s-argocd-argocdse-07cd573bd0-79d1e88b23d31f78.elb.us-east-1.amazonaws.com"
 
 tags = {
   Environment = "prod"
