@@ -109,6 +109,15 @@ module "eks" {
     vpc-cni = {
       most_recent    = true
       before_compute = true
+      # NetworkPolicy enforcement. The node agent ships in this addon but runs
+      # with --enable-network-policy=false, so without this the gitops repo's
+      # default-deny policies are accepted by the API and enforced by nothing:
+      # `kubectl get networkpolicy` shows them, and staging can still reach
+      # dev. A silent no-op is worse than a missing control, because it reads
+      # as configured. See var.enable_network_policy for the ALB caveat.
+      configuration_values = jsonencode({
+        enableNetworkPolicy = var.enable_network_policy ? "true" : "false"
+      })
     }
     kube-proxy = {
       most_recent    = true

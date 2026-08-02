@@ -34,6 +34,12 @@ variable "enable_cluster_encryption" {
   default     = false
 }
 
+variable "enable_network_policy" {
+  description = "Have the VPC CNI actually ENFORCE NetworkPolicy objects. The addon ships with this off, which means a NetworkPolicy is accepted by the API server and then silently ignored - no error, no event - so the gitops repo's default-deny rules provide no isolation at all until this is true. Enabling it is not free: with target-type ip the ALB connects straight to pod IPs, so the policies must already allow the ALB's subnets or ingress traffic is dropped the moment this flips."
+  type        = bool
+  default     = false
+}
+
 variable "cluster_log_types" {
   description = "Control plane log types shipped to CloudWatch"
   type        = list(string)

@@ -14,6 +14,16 @@ region       = "us-east-1"
 
 # eks
 enable_cluster_encryption = false # keep dev cheap/fast; prod turns this on
+
+# This cluster hosts BOTH dev and staging, so the gitops repo's default-deny
+# NetworkPolicies are the only thing keeping those namespaces apart - there is
+# no second control plane doing it. Without this flag they are accepted by the
+# API and enforced by nothing, which is the worst of both worlds: it reads as
+# isolated and isn't. Turned on here first, ahead of prod, because prod sits
+# alone on its own cluster and so has the least to gain and the most to lose
+# from going first.
+enable_network_policy = true
+
 eks_managed_node_groups = {
   general = {
     instance_types = ["t3.medium"]
