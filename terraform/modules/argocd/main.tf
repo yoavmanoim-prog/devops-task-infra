@@ -123,17 +123,59 @@ resource "helm_release" "argocd" {
   depends_on = [kubernetes_secret.argocd_github_oauth]
 }
 
+# AppProject for the bootstrap Application below.
+#
+# That Application used to run in ArgoCD's built-in `default` project, whose
+# defaults are destinations `*/*`, sourceRepos `*` and clusterResourceWhitelist
+# `*/*` - i.e. deploy anything, anywhere, from any repo. The env-scoped
+# projects (dev/prod, defined in the gitops repo) are properly restricted, but
+# the root Application that CREATES them sat outside those restrictions, so the
+# isolation could be bypassed by whatever the root was pointed at.
+#
+# The original comment said `default` avoided a chicken-and-egg with the
+# projects created in the same sync wave. That reasoning only applies to
+# projects ArgoCD creates - Terraform can create this one directly, before the
+# Application that references it, so there is no cycle. depends_on makes the
+# ordering explicit because ArgoCD rejects an Application naming a project that
+# does not yet exist.
+#
+# Scoped to exactly what the root actually does, confirmed against the live
+# cluster (`kubectl get application <env>-root -o jsonpath='{.status.resources}'`):
+# it manages an AppProject, an Application and an ApplicationSet - three
+# NAMESPACED argoproj.io objects in the argocd namespace, nothing cluster-scoped.
+resource "kubernetes_manifest" "bootstrap_project" {
+  manifest = {
+    apiVersion = "argoproj.io/v1alpha1"
+    kind       = "AppProject"
+    metadata = {
+      name      = "platform"
+      namespace = var.namespace
+    }
+    spec = {
+      description  = "Bootstrap app-of-apps only. Deliberately narrower than the default project it replaces."
+      sourceRepos  = [var.gitops_repo_url]
+      destinations = [{ server = "https://kubernetes.default.svc", namespace = var.namespace }]
+      # Empty on purpose: the root creates no cluster-scoped resources. The
+      # Namespace objects come from the platform Application, which runs under
+      # the env-scoped project and has its own whitelist for them.
+      clusterResourceWhitelist   = []
+      namespaceResourceWhitelist = [{ group = "argoproj.io", kind = "*" }]
+    }
+  }
+
+  depends_on = [helm_release.argocd]
+}
+
 # Bootstrap "app of apps": the ONLY Application Terraform ever creates
-# directly. It lives in the default project (which always exists, avoiding
-# a chicken-and-egg problem with the env-scoped AppProject(s) that this same
-# sync wave creates) and just points at this cluster's folder in the gitops
-# repo. Everything else - AppProject(s), the real workload Application(s),
-# namespaces/quotas/RBAC - is defined as YAML in that repo and reconciled by
-# ArgoCD from here on, not re-applied by Terraform. For the dev cluster,
-# apps/dev/ contains an ApplicationSet (list generator over [dev, staging])
-# so this one bootstrap Application fans out to both namespaces; for prod,
-# apps/prod/ is a single manual-sync Application for the production ns.
+# directly. It points at this cluster's folder in the gitops repo; everything
+# else - AppProject(s), the real workload Application(s), namespaces/quotas/RBAC
+# - is defined as YAML in that repo and reconciled by ArgoCD from here on, not
+# re-applied by Terraform. For the dev cluster, apps/dev/ contains an
+# ApplicationSet (list generator over [dev, staging]) so this one bootstrap
+# Application fans out to both namespaces; for prod, apps/prod/ is a single
+# manual-sync Application for the production ns.
 resource "kubernetes_manifest" "bootstrap_app_of_apps" {
+
   manifest = {
     apiVersion = "argoproj.io/v1alpha1"
     kind       = "Application"
@@ -142,7 +184,7 @@ resource "kubernetes_manifest" "bootstrap_app_of_apps" {
       namespace = var.namespace
     }
     spec = {
-      project = "default"
+      project = kubernetes_manifest.bootstrap_project.manifest.metadata.name
       source = {
         repoURL        = var.gitops_repo_url
         targetRevision = "HEAD"
@@ -162,5 +204,7 @@ resource "kubernetes_manifest" "bootstrap_app_of_apps" {
     }
   }
 
-  depends_on = [helm_release.argocd]
+  # The project too, not just the chart: ArgoCD rejects an Application that
+  # names a project which does not exist yet.
+  depends_on = [kubernetes_manifest.bootstrap_project]
 }

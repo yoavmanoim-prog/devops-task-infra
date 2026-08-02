@@ -45,6 +45,22 @@ enable_network_policy = true
 # as the NetworkPolicy that was accepted and enforced by nothing: a
 # declaration with no implementation.
 enable_metrics_server = true
+
+# monitoring - alert delivery
+#
+# kube-prometheus-stack ships ~100 alert rules and, by default, a route that
+# sends every one of them to a receiver named "null". They evaluated, fired and
+# were discarded for the life of this cluster: monitoring with dashboards and
+# no way to tell anyone anything. Turning this on creates an SNS topic and
+# gives Alertmanager an IRSA role scoped to sns:Publish on that topic only.
+#
+# alert_email is deliberately NOT set here. These repos are public, and a
+# personal address in a committed file is a gift to scrapers - same reasoning
+# as the ArgoCD OAuth credentials. Pass it at apply time instead:
+#   TF_VAR_alert_email=you@example.com terragrunt apply
+# and note AWS will not deliver anything until the confirmation link in the
+# subscription email is clicked.
+enable_alert_delivery = true
 # One node group, not two. The second ("system", tainted NO_SCHEDULE) had
 # nothing tolerating it anywhere in the gitops repo, so it would have run
 # permanently empty at full cost - it was reserved for future workloads that

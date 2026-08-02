@@ -24,6 +24,8 @@ dependency "eks" {
     cluster_name                       = "devops-task-mock"
     cluster_endpoint                   = "https://mock.eks.amazonaws.com"
     cluster_certificate_authority_data = "bW9jaw=="
+    oidc_provider_arn                  = "arn:aws:iam::000000000000:oidc-provider/mock"
+    oidc_provider                      = "oidc.eks.us-east-1.amazonaws.com/id/MOCK"
   }
   mock_outputs_allowed_terraform_commands = ["validate", "plan", "init"]
 }
@@ -50,4 +52,11 @@ generate "provider_k8s_helm" {
       }
     }
   EOF
+}
+
+# Alertmanager assumes an IAM role via web identity to publish to SNS, so it
+# needs the cluster's OIDC provider. Only used when enable_alert_delivery.
+inputs = {
+  oidc_provider_arn = dependency.eks.outputs.oidc_provider_arn
+  oidc_provider     = dependency.eks.outputs.oidc_provider
 }
