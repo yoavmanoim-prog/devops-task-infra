@@ -40,6 +40,12 @@ variable "enable_network_policy" {
   default     = false
 }
 
+variable "enable_metrics_server" {
+  description = "Install the metrics-server addon. Required for any HPA to work: Kubernetes does not collect pod CPU/memory itself, so without it an HPA reports `cpu: <unknown>/target`, never scales, and raises no error - it simply reads as configured while doing nothing. Only set where an HPA exists; elsewhere it is an unused component."
+  type        = bool
+  default     = false
+}
+
 variable "cluster_log_types" {
   description = "Control plane log types shipped to CloudWatch"
   type        = list(string)

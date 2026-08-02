@@ -105,7 +105,7 @@ module "eks" {
   # coredns is deliberately left at before_compute = false: it's an ordinary
   # Deployment that needs schedulable nodes to run on, so installing it before
   # compute exists just leaves it Pending.
-  addons = {
+  addons = merge({
     vpc-cni = {
       most_recent    = true
       before_compute = true
@@ -141,7 +141,13 @@ module "eks" {
       most_recent              = true
       service_account_role_arn = module.irsa_ebs_csi.arn
     }
-  }
+    },
+    # Only where an HPA actually exists - see var.enable_metrics_server. An HPA
+    # with no metrics source is not an error: it reports `cpu: <unknown>/65%`,
+    # never scales, and reads as configured. Installing this anywhere without
+    # an HPA would just be an unused component.
+    var.enable_metrics_server ? { "metrics-server" = { most_recent = true } } : {}
+  )
 
   eks_managed_node_groups = local.eks_managed_node_groups
 
